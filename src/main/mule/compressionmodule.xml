@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:compression="http://www.mulesoft.org/schema/mule/compression" xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/compression http://www.mulesoft.org/schema/mule/compression/current/mule-compression.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<file:config name="File_Config" doc:name="File Config" doc:id="4f6371e9-bef0-4c1f-bfa5-b99ae9a2623b" >
+		<file:connection workingDir="/Users/ankurparashar/AnypointStudio/studio-workspace/compressionmodule/src/main/resources" />
+	</file:config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="67cc07f0-9ddb-4595-87eb-819ad054bc20" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<flow name="archive" >
+	<http:listener doc:name="Listener" doc:id="d15dff7c-34c8-44c7-a0ff-62e5ae43dcec" config-ref="HTTP_Listener_config" path="/archive"/>
+		<file:list doc:name="List" config-ref="File_Config" directoryPath="#[attributes.queryParams.inputDir]"/>
+	<set-payload value='#[output application/java
+---
+(0 to sizeOf(payload) - 1) as Array
+reduce (index, acc={}) -&gt;
+acc ++ { (payload[index].attributes.fileName): payload[index].payload}]' doc:name="Set Payload" />
+
+	<compression:archive doc:name="Archive" doc:id="041d9278-976d-47d4-b6b3-1396815aa89f" >
+			<compression:archiver >
+				<compression:zip-archiver />
+			</compression:archiver>
+		</compression:archive>
+		<logger level="INFO" doc:name="Logger" doc:id="dcbde1dd-820c-4dca-849e-301c2a2f5783" message="Archived payload: #[payload]"/>
+		<file:write doc:name="Write" doc:id="1a9e00a1-c800-4d50-9cc1-248e9b45de9f" config-ref="File_Config" path="archive/payload.gzip"/>
+		<logger level="INFO" doc:name="Logger" doc:id="20607acc-c340-4f43-864f-89367d3f11eb" message="Archived file created."/>
+  </flow>
+	<flow name="extract" doc:id="d950d8b4-661d-4fef-81fb-ff01d112d2d8" >
+		<http:listener doc:name="Listener" doc:id="ea9f6ec2-2d5e-4121-9344-260813ea9b11" config-ref="HTTP_Listener_config" path="/extract"/>
+		<logger level="INFO" doc:name="Logger" doc:id="6dca72c1-31b5-4536-afed-a842078b0af7" message="Extraction Request received.."/>
+		<file:read doc:name="Read" doc:id="f874b97a-8151-4835-9990-363264117d35" config-ref="File_Config" path="archive/payload.gzip"/>
+		<compression:extract doc:name="Extract" doc:id="676af913-0a79-4b11-a925-dad597d1f68e">
+			<compression:extractor>
+				<compression:zip-extractor />
+			</compression:extractor>
+		</compression:extract>
+		<foreach doc:name="For Each" collection="payload">
+			<file:write doc:name="Write" config-ref="File_Config" path='#[output application/json
+---
+"output/" ++ (payload pluck $$)[0]]'>
+	    <file:content><![CDATA[#[output application/java --- ( payload pluck $ )[0]]]]></file:content>
+	  </file:write>
+	</foreach>
+		<logger level="INFO" doc:name="Logger" message="#[output application/json --- payload]" />
+	</flow>
+	<flow name="compression" doc:id="ba8bbca6-49c2-43be-8ecc-198d1653f805" >
+		<http:listener doc:name="Listener" doc:id="1d78721c-76b0-49e4-a13a-99f23fb91a96" config-ref="HTTP_Listener_config" path="/compression" allowedMethods="POST">
+		</http:listener>
+		<logger level="INFO" doc:name="Logger" doc:id="bed2d325-74e0-4c6f-86e3-bd28eacc8194" message="Received request: #[payload]"/>
+		<set-payload value="#[payload]" doc:name="Set Payload" doc:id="996938d8-521e-41fb-950e-0b39e871e8fb" />
+		<compression:compress doc:name="Compress" doc:id="a79389c5-1b74-4c35-85dc-358a1e226112" >
+			<compression:compressor >
+				<compression:gzip-compressor />
+			</compression:compressor>
+		</compression:compress>
+		<logger level="INFO" doc:name="Logger" doc:id="b34bc1b5-ddf1-4b46-bf44-30c6e3d5c8f7" message="Compressed payload: #[payload]"/>
+		<file:write doc:name="Write" doc:id="60be8f5c-25e5-42aa-960f-2c0870d7e41e" config-ref="File_Config" path="compressed/payload.gzip"/>
+		<logger level="INFO" doc:name="Logger" doc:id="f97e59fe-5614-4400-a7b4-624869a18789" message="File compressed and available."/>
+		<compression:decompress doc:name="Decompress" doc:id="866dcb51-5dac-4654-a89e-409019922679" >
+			<compression:decompressor >
+				<compression:gzip-decompressor />
+			</compression:decompressor>
+		</compression:decompress>
+		<logger level="INFO" doc:name="Logger" doc:id="1d5287c7-3335-49bb-b43b-980c4f7a6a4f" message="Decompressed message: #[payload]"/>
+		<file:write doc:name="Write" doc:id="75b091d9-a0d3-463a-af50-568efe087d35" config-ref="File_Config" path="decompressed/decompressed.json"/>
+		<logger level="INFO" doc:name="Logger" doc:id="84e9c9f3-8398-46fb-a4bd-9f6b46c3eb0e" message="Decompressed file created."/>
+	</flow>
+</mule>
